@@ -319,7 +319,7 @@ PUBLIC bool_t bEEPROMReadDevInfo() {
  ******************************************************************************/
 PUBLIC bool_t bEEPROMWriteDevInfo(uint8 u8StatusMapMask) {
 	// 実行判定
-	if ((sDevInfo.u8StatusMap & u8StatusMapMask) == u8StatusMapMask) {
+	if ((sDevInfo.u8StatusMap & u8StatusMapMask) == sDevInfo.u8StatusMap) {
 		return FALSE;
 	}
 	// ステータスマップの更新
