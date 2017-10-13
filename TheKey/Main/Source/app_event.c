@@ -970,7 +970,10 @@ PRIVATE bool_t bEvt_DefaultMsgChk(tsWirelessMsg* psWlsMsg, teAppCommand eCmd, ts
 	}
 	// コマンドチェック
 	if (psWlsMsg->u8Command != eCmd) {
-		vLCDdrawing("ExecErr ", "Rx Cmd  ");
+		// ステータス情報を表示
+		char cMsg[LCD_BUFF_COL_SIZE + 1];
+		sprintf(cMsg, "RxCmd %02X", psWlsMsg->u8Command);
+		vLCDdrawing("ExecErr ", cMsg);
 		iEEPROMWriteLog(E_MSG_CD_RX_CMD_ERR, psWlsMsg);
 		return FALSE;
 	}

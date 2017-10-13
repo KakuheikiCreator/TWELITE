@@ -602,6 +602,10 @@ PUBLIC void vEvent_RxAuth_03(uint32 u32EvtTimeMs) {
 		bEvt_TxResponse(E_APP_CMD_NACK, TRUE);
 		// 通信トランザクション終了処理
 		vEvt_EndTxRxTrns(&sTxRxTrnsInfo);
+#ifdef DEBUG
+	vfPrintf(&sSerStream, "MS:%08d Auth Error Status:%02X\n", u32TickCount_ms, sDevInfo.u8StatusMap);
+	SERIAL_vFlush(sSerStream.u8Device);
+#endif
 		return;
 	}
 
