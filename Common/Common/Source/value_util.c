@@ -178,7 +178,7 @@ PUBLIC uint32 u32ValUtil_dateToDays(uint16 u16Year, uint8 u8Month, uint8 u8Day) 
 	// 当年末までのうるう日数を加算
 	u32WkTotalDays = u32WkTotalDays + u16Year / 4 - u16Year / 100 + u16Year / 400;
 	// 各月（1-12）の月初日までの経過日数
-	uint32 u32ConvDays[12] = {0, 31, 59, 90, 120, 151, 181, 212, 242, 273, 303, 334};
+	uint32 u32ConvDays[12] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
 	u32WkTotalDays = u32WkTotalDays + u32ConvDays[u8Month - 1];
 	u32WkTotalDays = u32WkTotalDays + u8Day - 1;
 	// 当年のうるう日を調整
