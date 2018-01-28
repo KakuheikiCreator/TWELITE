@@ -8,6 +8,7 @@
  * DESCRIPTION:画面表示やキー入力等の基本的な入出力機能のヘッダファイル
  *
  * CHANGE HISTORY:
+ * 2018/01/23 05:05:00 認証時の通信内容をAES暗号化する事で保護
  *
  * LAST MODIFIED BY:
  *
@@ -1357,7 +1358,7 @@ PUBLIC bool_t bWirelessRx(tsRxDataApp *psRx) {
 		return FALSE;
 	}
 	// 受信データ長判定
-	if (psRx->u8Len != sizeof(tsWirelessMsg)) {
+	if (psRx->u8Len != TX_REC_SIZE) {
 		return FALSE;
 	}
 	// データ部分の宛先アドレス判定

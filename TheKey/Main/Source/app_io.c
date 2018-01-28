@@ -8,6 +8,7 @@
  * DESCRIPTION:画面表示やキー入力等の基本的な入出力機能のヘッダファイル
  *
  * CHANGE HISTORY:
+ * 2018/01/24 19:04:00 認証時の通信内容をAES暗号化する事で保護
  *
  * LAST MODIFIED BY:
  *
@@ -106,10 +107,6 @@ PUBLIC void vAppIOInit() {
 	//==========================================================================
 	// デジタル入出力設定
 	//==========================================================================
-	// DIOピンの入出力を設定
-//	vAHI_DioSetDirection(0x00, 0x00);
-	// プルアップ設定
-//	vAHI_DioSetPullup(0x00, 0x00);
 	// ADCの初期化
 	bIOUtil_adcInit(E_AHI_AP_CLOCKDIV_500KHZ);
 	//==========================================================================
@@ -583,7 +580,7 @@ PUBLIC bool_t bWirelessRxPkt(tsRxDataApp *psRx) {
 		return FALSE;
 	}
 	// 受信データ長判定
-	if (psRx->u8Len != sizeof(tsWirelessMsg)) {
+	if (psRx->u8Len != TX_REC_SIZE) {
 		return FALSE;
 	}
 	//==========================================================================

@@ -8,6 +8,7 @@
  * DESCRIPTION:イベント処理を実装
  *
  * CHANGE HISTORY:
+ * 2018/01/27 23:19:00 認証時の通信データをAES暗号化
  *
  * LAST MODIFIED BY:
  *
@@ -47,6 +48,7 @@
 #include "framework.h"
 #include "io_util.h"
 #include "pwm_util.h"
+#include "aes.h"
 #include "sha256.h"
 #include "app_event.h"
 #include "app_io.h"
@@ -261,6 +263,8 @@ PUBLIC void vEvent_Second(uint32 u32EvtTimeMs) {
 //	sAppIO.iServoSetB = iIOUtil_adcReadBuffer(&sAppIO.sServoSetBBuffer, ADC_CHK_TOLERANCE, 5);
 //	u8DebugSts = (u8DebugSts + 1) % 32 + 1;
 //	vAHI_DioSetDirection(0x00, 0xFFFFFFFF);
+	// AES Test
+	vAES_test();
 	// デバッグメッセージ
 	char cMsg1[17];
 	char cMsg2[17];
@@ -457,6 +461,8 @@ PUBLIC void vEvent_RxAuth_00(uint32 u32EvtTimeMs) {
 	// 送信元アドレスチェック
 	int iRmtDevIdx = iEEPROMIndexOfRemoteInfo(sTxRxTrnsInfo.u32DstAddr);
 	if (iRmtDevIdx < 0) {
+		vfPrintf(&sSerStream, "MS:%08d vEvent_RxAuth_00 No.1\n", u32TickCount_ms);
+		SERIAL_vFlush(sSerStream.u8Device);
 		// 通信トランザクション終了処理
 		vEvt_EndTxRxTrns(&sTxRxTrnsInfo);
 		return;
@@ -466,6 +472,8 @@ PUBLIC void vEvent_RxAuth_00(uint32 u32EvtTimeMs) {
 	//==========================================================================
 	tsAuthRemoteDevInfo* psRemoteInfo = &sTxRxTrnsInfo.sRemoteInfo;
 	if (iEEPROMReadRemoteInfo(psRemoteInfo, iRmtDevIdx) < 0) {
+		vfPrintf(&sSerStream, "MS:%08d vEvent_RxAuth_00 No.2\n", u32TickCount_ms);
+		SERIAL_vFlush(sSerStream.u8Device);
 		// メモリIOエラー
 		bEEPROMWriteDevInfo(APP_STS_MAP_IO_ERR);
 		iEEPROMWriteLog(E_MSG_CD_READ_RMT_DEV_ERR, psRxMsg->u8Command);
@@ -482,7 +490,8 @@ PUBLIC void vEvent_RxAuth_00(uint32 u32EvtTimeMs) {
 	// ワンタイムトークンの生成依頼
 	//==========================================================================
 	// 同期トークンとワンタイム乱数を元にハッシュ関数を利用してワンタイムトークンを生成
-	sHashGenInfo = sAuth_generateHashInfo(psRemoteInfo->u8SyncToken, (psRxMsg->u32SyncVal % 240) + 15);
+	uint8 u8StCnt = (psRxMsg->u32SyncVal % (256 - APP_HASH_STRETCHING_CNT_MIN)) + APP_HASH_STRETCHING_CNT_MIN;
+	sHashGenInfo = sAuth_generateHashInfo(psRemoteInfo->u8SyncToken, u8StCnt);
 	sHashGenInfo.u32ShufflePtn = psRxMsg->u32SyncVal;
 	// 完了後の復帰イベントに次の処理イベントを設定
 	sTxRxTrnsInfo.eRtnAppEvt = E_EVENT_RX_AUTH_01;
@@ -504,16 +513,15 @@ PUBLIC void vEvent_RxAuth_00(uint32 u32EvtTimeMs) {
  ******************************************************************************/
 PUBLIC void vEvent_RxAuth_01(uint32 u32EvtTimeMs) {
 	//==========================================================================
-	// 受信メッセージのマスククリア
+	// 受信メッセージの復号化
 	//==========================================================================
 	tsWirelessMsg* psRxMsg = &sTxRxTrnsInfo.sRxWlsMsg;
 	// ワンタイムトークンのコピー
 	memcpy(sTxRxTrnsInfo.u8OneTimeTkn, sHashGenInfo.u8HashCode, APP_AUTH_TOKEN_SIZE);
-	// 受信メッセージのストレッチング回数を復号化
-	psRxMsg->u8AuthStCnt =
-			u8ValUtil_masking(psRxMsg->u8AuthStCnt, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
-	// 受信メッセージの認証トークンを復号化
-	vValUtil_masking(psRxMsg->u8AuthToken, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
+	// 受信メッセージの暗号化された領域を復号化
+	tsAES_state sAES_state =
+			vAES_newCBCState(AES_KEY_LEN_256, sTxRxTrnsInfo.u8OneTimeTkn, sTxRxTrnsInfo.u8OneTimeTkn);
+	vAES_decrypt(&sAES_state, &psRxMsg->u8AuthStCnt, 80);
 
 	//==========================================================================
 	// 返信ハッシュ生成情報
@@ -612,9 +620,11 @@ PUBLIC void vEvent_RxAuth_03(uint32 u32EvtTimeMs) {
 	//==========================================================================
 	// 更新後の認証情報生成
 	//==========================================================================
+	// 更新ストレッチング回数（送信側）
 	uint16 u16StCnt = u16ValUtil_getRandVal();
-	sTxRxTrnsInfo.u8UpdStretchingCntS = (u16StCnt & 0xFF);	// 更新ストレッチング回数（送信側）
-	sTxRxTrnsInfo.u8UpdStretchingCntR = (u16StCnt >> 8);	// 更新ストレッチング回数（受信側）
+	sTxRxTrnsInfo.u8UpdStretchingCntS = ((u16StCnt & 0xFF) % 251) + APP_HASH_STRETCHING_CNT_MIN;
+	// 更新ストレッチング回数（受信側）
+	sTxRxTrnsInfo.u8UpdStretchingCntR = ((u16StCnt >> 8) % 251) + APP_HASH_STRETCHING_CNT_MIN;
 	// 更新後ストレッチング回数
 	u16StCnt =
 		sTxRxTrnsInfo.u8UpdStretchingCntS + sTxRxTrnsInfo.u8UpdStretchingCntR + APP_HASH_STRETCHING_CNT_BASE;
@@ -670,20 +680,16 @@ PUBLIC void vEvent_RxAuth_04(uint32 u32EvtTimeMs) {
 	// リモートデバイス情報
 	tsAuthRemoteDevInfo* psRemoteInfo = &sTxRxTrnsInfo.sRemoteInfo;
 	// ストレッチング回数
-	sTxMsg.u8AuthStCnt =
-		u8ValUtil_masking(psRemoteInfo->u8RcvStretching, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
+	sTxMsg.u8AuthStCnt = psRemoteInfo->u8RcvStretching;
 	// レスポンストークン
 	memcpy(sTxMsg.u8AuthToken, sTxRxTrnsInfo.u8ResponseTkn, APP_AUTH_TOKEN_SIZE);
-	vValUtil_masking(sTxMsg.u8AuthToken, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
 	//--------------------------------------------------------------------------
 	// レスポンス更新認証情報の編集
 	//--------------------------------------------------------------------------
 	// 更新ストレッチング回数
-	sTxMsg.u8UpdAuthStCnt =
-		u8ValUtil_masking(sTxRxTrnsInfo.u8UpdStretchingCntS, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
+	sTxMsg.u8UpdAuthStCnt = sTxRxTrnsInfo.u8UpdStretchingCntS;
 	// 更新認証トークン
 	memcpy(sTxMsg.u8UpdAuthToken, sHashGenInfo.u8HashCode, APP_AUTH_TOKEN_SIZE);
-	vValUtil_masking(sTxMsg.u8UpdAuthToken, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
 	// 返信データ
 	sTxMsg.u16Year     = sAppIO.sDatetime.u16Year;		// 年
 	sTxMsg.u8Month     = sAppIO.sDatetime.u8Month;		// 月
@@ -692,8 +698,12 @@ PUBLIC void vEvent_RxAuth_04(uint32 u32EvtTimeMs) {
 	sTxMsg.u8Minute    = sAppIO.sDatetime.u8Minutes;	// 分
 	sTxMsg.u8Second    = sAppIO.sDatetime.u8Seconds;	// 秒
 	sTxMsg.u8StatusMap = sDevInfo.u8StatusMap;			// ステータスマップ
+	// 暗号化領域の暗号化
+	tsAES_state sAES_state =
+			vAES_newCBCState(AES_KEY_LEN_256, sTxRxTrnsInfo.u8OneTimeTkn, sTxRxTrnsInfo.u8OneTimeTkn);
+	vAES_encrypt(&sAES_state, &sTxMsg.u8AuthStCnt, 80);
 	// CRC8編集
-	sTxMsg.u8CRC = u8CCITT8((uint8*)&sTxMsg, sizeof(tsWirelessMsg));
+	sTxMsg.u8CRC = u8CCITT8((uint8*)&sTxMsg, TX_REC_SIZE);
 	//--------------------------------------------------------------------------
 	// 電文の送信
 	//--------------------------------------------------------------------------
@@ -1287,23 +1297,16 @@ PRIVATE bool_t bEvt_RxDefaultChk(tsRxTxInfo* psRxInfo) {
 	// CRCチェック
 	uint8 u8WkCRC = psWlsMsg->u8CRC;
 	psWlsMsg->u8CRC = 0;
-	if (u8CCITT8((uint8*)psWlsMsg, sizeof(tsWirelessMsg)) != u8WkCRC) {
+	if (u8CCITT8((uint8*)psWlsMsg, TX_REC_SIZE) != u8WkCRC) {
 		iEEPROMWriteLog(E_MSG_CD_RX_CRC_ERR, psWlsMsg->u8Command);
 		return FALSE;
 	}
 	// コマンドチェック
 	switch (psWlsMsg->u8Command) {
 	case E_APP_CMD_CHK_STATUS:	// 送受信コマンド：ステータス要求
-		break;
 	case E_APP_CMD_UNLOCK:		// 送受信コマンド：開錠要求
 	case E_APP_CMD_LOCK:		// 送受信コマンド：通常施錠要求
 	case E_APP_CMD_ALERT:		// 送受信コマンド：警戒施錠要求
-		// ストレッチング回数チェック
-		if (psWlsMsg->u8AuthStCnt == 0) {
-			iEEPROMWriteLog(E_MSG_CD_RX_ST_CNT_ERR, psWlsMsg->u8Command);
-			return FALSE;
-		}
-		break;
 	case E_APP_CMD_MST_UNLOCK:	// 送受信コマンド：マスター開錠要求
 		break;
 	default:
@@ -1362,7 +1365,7 @@ PRIVATE bool_t bEvt_TxResponse(teAppCommand eCommand, bool_t bEncryption) {
 	sWlsMsg.u8Second    = sAppIO.sDatetime.u8Seconds;	// 秒
 	sWlsMsg.u8StatusMap = sDevInfo.u8StatusMap;			// ステータスマップ
 	// CRC8編集
-	sWlsMsg.u8CRC = u8CCITT8((uint8*)&sWlsMsg, sizeof(tsWirelessMsg));
+	sWlsMsg.u8CRC = u8CCITT8((uint8*)&sWlsMsg, TX_REC_SIZE);
 	// 電文の送信
 	if (bWirelessTxEnq(sDevInfo.u32DeviceID, bEncryption, &sWlsMsg) ==  FALSE) {
 		// エラー処理

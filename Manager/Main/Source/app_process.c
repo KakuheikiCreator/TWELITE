@@ -8,6 +8,7 @@
  * DESCRIPTION:各画面プロセス毎の処理を実装
  *
  * CHANGE HISTORY:
+ * 2018/01/27 23:19:00 認証時の通信データをAES暗号化
  *
  * LAST MODIFIED BY:
  *
@@ -46,6 +47,7 @@
 #include "config_default.h"
 #include "framework.h"
 #include "io_util.h"
+#include "aes.h"
 #include "sha256.h"
 #include "value_util.h"
 #include "app_process.h"
@@ -2350,9 +2352,11 @@ PUBLIC void vProc_Synchronizing(tsAppProcessInfo *psProcInfo) {
 		vValUtil_setU8RandArray(sRemoteInfoMain.u8SyncToken, 32);	// 同期トークン
 		vValUtil_setU8RandArray(sRemoteInfoMain.u8AuthCode, 32);	// 認証コード（受信側情報）
 		// ストレッチングカウントA（送信側）
-		sRemoteInfoMain.u8SndStretching = u32ValUtil_getRandVal() % 251 + 5;
+		sRemoteInfoMain.u8SndStretching =
+				(u32ValUtil_getRandVal() % (256 - APP_HASH_STRETCHING_CNT_MIN)) + APP_HASH_STRETCHING_CNT_MIN;
 		// ストレッチングカウントB（照合側）
-		sRemoteInfoMain.u8RcvStretching = u32ValUtil_getRandVal() % 251 + 5;
+		sRemoteInfoMain.u8RcvStretching =
+				(u32ValUtil_getRandVal() % (256 - APP_HASH_STRETCHING_CNT_MIN)) + APP_HASH_STRETCHING_CNT_MIN;
 		sRemoteInfoMain.u8StatusMap = 0x00;							// ステータスマップ
 		//----------------------------------------------------------------------
 		// 副側に送信時のリモートデバイス情報の初期編集
@@ -2370,9 +2374,11 @@ PUBLIC void vProc_Synchronizing(tsAppProcessInfo *psProcInfo) {
 		memcpy(sRemoteInfoSub.u8SyncToken, sRemoteInfoMain.u8SyncToken, 32);	// 同期トークン
 		vValUtil_setU8RandArray(sRemoteInfoSub.u8AuthCode, 32);		// 認証コード（受信側情報）
 		// ストレッチングカウントA（送信側）
-		sRemoteInfoSub.u8SndStretching = u32ValUtil_getRandVal() % 251 + 5;
+		sRemoteInfoSub.u8SndStretching =
+			(u32ValUtil_getRandVal() % (256 - APP_HASH_STRETCHING_CNT_MIN)) + APP_HASH_STRETCHING_CNT_MIN;
 		// ストレッチングカウントB（照合側）
-		sRemoteInfoSub.u8RcvStretching = u32ValUtil_getRandVal() % 251 + 5;
+		sRemoteInfoSub.u8RcvStretching =
+			(u32ValUtil_getRandVal() % (256 - APP_HASH_STRETCHING_CNT_MIN)) + APP_HASH_STRETCHING_CNT_MIN;
 		sRemoteInfoSub.u8StatusMap = 0x00;							// ステータスマップ
 		// 処理ステップ更新
 		psProcInfo->u32Param_0++;
@@ -3112,9 +3118,9 @@ PUBLIC void vProc_ExecCmd(tsAppProcessInfo *psProcInfo, teAppCommand eCmd) {
 		// ステータス要求
 		psWlsMsg->u8Command = eCmd;
 		// CRC8編集
-		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, sizeof(tsWirelessMsg));
+		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, TX_REC_SIZE);
 		// 送信
-		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, sizeof(tsWirelessMsg)) == FALSE) {
+		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, TX_REC_SIZE) == FALSE) {
 			vProc_SetMessage("Command Exec Err", "Transmition     ");
 			iEEPROMWriteLog(E_MSG_CD_TX_ERR, psWlsMsg);
 			return;
@@ -3236,6 +3242,7 @@ PUBLIC void vProc_ExecAuthCmd(tsAppProcessInfo *psProcInfo, teAppCommand eCmd) {
 	uint16 u16StCnt;	// ストレッチング回数
 	tsWirelessMsg* psWlsMsg;
 	psWlsMsg = &sTxRxTrnsInfo.sWlsMsg;
+	tsAES_state sAES_state;
 	tsRxInfo sRxInfo;	// 受信データ情報
 	switch (psProcInfo->u32Param_0) {
 	case 0:
@@ -3249,9 +3256,9 @@ PUBLIC void vProc_ExecAuthCmd(tsAppProcessInfo *psProcInfo, teAppCommand eCmd) {
 		psWlsMsg->u32DstAddr = sRemoteInfoMain.u32DeviceID;
 		psWlsMsg->u8Command = E_APP_CMD_CHK_STATUS;
 		// CRC8編集
-		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, sizeof(tsWirelessMsg));
+		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, TX_REC_SIZE);
 		// 送信
-		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, sizeof(tsWirelessMsg)) == FALSE) {
+		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, TX_REC_SIZE) == FALSE) {
 			vProc_SetMessage("Command Exec Err", "Transmition     ");
 			iEEPROMWriteLog(E_MSG_CD_TX_AUTH_CMD_ERR, psWlsMsg);
 			return;
@@ -3329,7 +3336,8 @@ PUBLIC void vProc_ExecAuthCmd(tsAppProcessInfo *psProcInfo, teAppCommand eCmd) {
 		// ワンタイム乱数生成
 		sTxRxTrnsInfo.u32OneTimeVal = u32ValUtil_getRandVal();
 		// 同期トークンとワンタイム乱数を元にハッシュ関数を利用してワンタイムトークンを生成
-		sHashGenInfo = sAuth_generateHashInfo(sRemoteInfoMain.u8SyncToken, (sTxRxTrnsInfo.u32OneTimeVal % 240) + 15);
+		u16StCnt = (sTxRxTrnsInfo.u32OneTimeVal % (256 - APP_HASH_STRETCHING_CNT_MIN)) + APP_HASH_STRETCHING_CNT_MIN;
+		sHashGenInfo = sAuth_generateHashInfo(sRemoteInfoMain.u8SyncToken, u16StCnt);
 		sHashGenInfo.u32ShufflePtn = sTxRxTrnsInfo.u32OneTimeVal;
 		// ハッシュ化処理をバックグラウンドプロセスとして起動
 		iEntrySeqEvt(E_EVENT_APP_HASH_ST);
@@ -3361,17 +3369,17 @@ PUBLIC void vProc_ExecAuthCmd(tsAppProcessInfo *psProcInfo, teAppCommand eCmd) {
 		psWlsMsg->u32DstAddr = sRemoteInfoMain.u32DeviceID;		// 宛先アドレス
 		psWlsMsg->u8Command  = eCmd;							// コマンド
 		psWlsMsg->u32SyncVal = sTxRxTrnsInfo.u32OneTimeVal;		// ワンタイム乱数
-		// ストレッチング回数（ワンタイムトークンでマスク）
-		psWlsMsg->u8AuthStCnt =
-			u8ValUtil_masking(sRemoteInfoMain.u8SndStretching, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
+		// ストレッチング回数
+		psWlsMsg->u8AuthStCnt = sRemoteInfoMain.u8SndStretching;
 		// 認証トークンに認証ハッシュを編集
 		memcpy(psWlsMsg->u8AuthToken, sRemoteInfoMain.u8AuthHash, APP_AUTH_TOKEN_SIZE);
-		// ワンタイムトークンでマスキング
-		vValUtil_masking(psWlsMsg->u8AuthToken, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
+		// 暗号化領域の暗号化
+		sAES_state = vAES_newCBCState(AES_KEY_LEN_256, sTxRxTrnsInfo.u8OneTimeTkn, sTxRxTrnsInfo.u8OneTimeTkn);
+		vAES_encrypt(&sAES_state, &psWlsMsg->u8AuthStCnt, 80);
 		// CRC8編集
-		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, sizeof(tsWirelessMsg));
+		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, TX_REC_SIZE);
 		// 送信
-		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, sizeof(tsWirelessMsg)) == FALSE) {
+		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, TX_REC_SIZE) == FALSE) {
 			vProc_SetMessage("Command Exec Err", "Transmition     ");
 			iEEPROMWriteLog(E_MSG_CD_TX_AUTH_CMD_ERR, psWlsMsg);
 			return;
@@ -3414,7 +3422,7 @@ PUBLIC void vProc_ExecAuthCmd(tsAppProcessInfo *psProcInfo, teAppCommand eCmd) {
 		//----------------------------------------------------------------------
 		// レスポンスデータチェック
 		//----------------------------------------------------------------------
-		// 基本的なチェックを実施
+		// 基本的なチェックを実施（暗号化領域を復号化）
 		if (bProc_DefaultChkRx(psWlsMsg, E_APP_CMD_AUTH_ACK) == FALSE) {
 			return;
 		}
@@ -3434,19 +3442,6 @@ PUBLIC void vProc_ExecAuthCmd(tsAppProcessInfo *psProcInfo, teAppCommand eCmd) {
 			iEEPROMWriteLog(E_MSG_CD_RX_DATETIME_ERR, psWlsMsg);
 			return;
 		}
-		//----------------------------------------------------------------------
-		// 受信情報を復元
-		//----------------------------------------------------------------------
-		// 認証ストレッチング回数を復元
-		psWlsMsg->u8AuthStCnt =
-			u8ValUtil_masking(psWlsMsg->u8AuthStCnt, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
-		// 認証トークンを復元
-		vValUtil_masking(psWlsMsg->u8AuthToken, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
-		// 更新ストレッチング回数を復元
-		psWlsMsg->u8UpdAuthStCnt =
-			u8ValUtil_masking(psWlsMsg->u8UpdAuthStCnt, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
-		// 更新トークンマップを復元
-		vValUtil_masking(psWlsMsg->u8UpdAuthToken, sTxRxTrnsInfo.u8OneTimeTkn, APP_AUTH_TOKEN_SIZE);
 		//----------------------------------------------------------------------
 		// 認証情報をチェック
 		//----------------------------------------------------------------------
@@ -3600,9 +3595,9 @@ PUBLIC void vProc_ExecMstCmd_02(tsAppProcessInfo *psProcInfo, teAppCommand eCmd)
 		memcpy(&psWlsMsg->u8AuthToken[0], sAppScrParam.cDispMsg[1], 16);
 		memcpy(&psWlsMsg->u8AuthToken[16], sAppScrParam.cDispMsg[2], 16);
 		// CRC8編集
-		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, sizeof(tsWirelessMsg));
+		psWlsMsg->u8CRC = u8CCITT8((uint8*)psWlsMsg, TX_REC_SIZE);
 		// 送信
-		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, sizeof(tsWirelessMsg)) == FALSE) {
+		if (bWirelessTx(sDevInfo.u32DeviceID, FALSE, (uint8*)psWlsMsg, TX_REC_SIZE) == FALSE) {
 			vProc_SetMessage("Command Exec Err", "Transmition     ");
 			iEEPROMWriteLog(E_MSG_CD_TX_MST_CMD_ERR, psWlsMsg);
 			return;
@@ -4198,7 +4193,7 @@ PRIVATE bool_t bProc_DefaultChkRx(tsWirelessMsg* psWlsMsg, uint8 u8Cmd) {
 	// CRCチェック
 	uint8 u8WkCRC = psWlsMsg->u8CRC;
 	psWlsMsg->u8CRC = 0;
-	if (u8CCITT8((uint8*)psWlsMsg, sizeof(tsWirelessMsg)) != u8WkCRC) {
+	if (u8CCITT8((uint8*)psWlsMsg, TX_REC_SIZE) != u8WkCRC) {
 		vProc_SetMessage("Command Exec Err", "Data CRC Check  ");
 		iEEPROMWriteLog(E_MSG_CD_RX_CRC_ERR, psWlsMsg);
 		return FALSE;
@@ -4208,6 +4203,12 @@ PRIVATE bool_t bProc_DefaultChkRx(tsWirelessMsg* psWlsMsg, uint8 u8Cmd) {
 		vProc_SetMessage("Command Exec Err", "Response Command");
 		iEEPROMWriteLog(E_MSG_CD_RX_CMD_ERR, psWlsMsg);
 		return FALSE;
+	}
+	// 受信メッセージの暗号化された領域を復号化
+	if (psWlsMsg->u8Command == E_APP_CMD_AUTH_ACK) {
+		tsAES_state sAES_state =
+				vAES_newCBCState(AES_KEY_LEN_256, sTxRxTrnsInfo.u8OneTimeTkn, sTxRxTrnsInfo.u8OneTimeTkn);
+		vAES_decrypt(&sAES_state, &psWlsMsg->u8AuthStCnt, 80);
 	}
 	// 日付チェック
 	if (bValUtil_validDate(psWlsMsg->u16Year, psWlsMsg->u8Month, psWlsMsg->u8Day) == FALSE) {

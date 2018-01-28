@@ -8,6 +8,7 @@
  * DESCRIPTION:イベント処理を実装
  *
  * CHANGE HISTORY:
+ * 2018/01/21 06:10:00 認証時の通信データをAES暗号化
  *
  * LAST MODIFIED BY:
  *
@@ -91,7 +92,6 @@ typedef enum {
 	E_MSG_CD_RX_DATE_ERR,					// 受信日付エラー
 	E_MSG_CD_RX_TIME_ERR,					// 受信時刻エラー
 	E_MSG_CD_RX_STS_ERR,					// 受信ステータスエラー
-	E_MSG_CD_RX_ST_CNT_ERR,					// 受信ストレッチング回数エラー
 	E_MSG_CD_RX_MST_TKN_ERR,				// 受信マスタートークンエラー
 	E_MSG_CD_RX_AUTH_TKN_ERR,				// 受信認証トークンエラー
 	E_MSG_CD_READ_RMT_DEV_ERR,				// リモートデバイス情報の読み込みエラー

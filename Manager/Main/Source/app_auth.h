@@ -8,6 +8,7 @@
  * DESCRIPTION:アカウント認証処理に関する関数群
  *
  * CHANGE HISTORY:
+ * 2018/01/23 05:40:00 通信レコードレイアウトをAES暗号化に合わせて調整
  *
  * LAST MODIFIED BY:
  *
@@ -31,13 +32,19 @@ extern "C" {
 /****************************************************************************/
 /***        Macro Definitions                                             ***/
 /****************************************************************************/
-// トークンサイズ
+/** トークンサイズ */
 #define APP_AUTH_TOKEN_SIZE     (32)
 
 /** ストレッチング回数ベース */
 #ifndef APP_HASH_STRETCHING_CNT_BASE
 	// ベースとなる回数は1920とする
 	#define APP_HASH_STRETCHING_CNT_BASE    (1920)
+#endif
+
+/** 最小ストレッチング回数 */
+#ifndef APP_HASH_STRETCHING_CNT_MIN
+	// 最小回数は5とする
+	#define APP_HASH_STRETCHING_CNT_MIN     (5)
 #endif
 
 /****************************************************************************/

@@ -8,6 +8,7 @@
  * DESCRIPTION:イベント処理を実装
  *
  * CHANGE HISTORY:
+ * 2018/01/27 23:19:00 認証時の通信データをAES暗号化
  *
  * LAST MODIFIED BY:
  *

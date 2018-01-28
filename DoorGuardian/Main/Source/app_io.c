@@ -8,6 +8,7 @@
  * DESCRIPTION:画面表示やキー入力等の基本的な入出力機能のヘッダファイル
  *
  * CHANGE HISTORY:
+ * 2018/01/23 05:58:00 認証時の通信内容をAES暗号化する事で保護
  *
  * LAST MODIFIED BY:
  *
@@ -765,7 +766,7 @@ PUBLIC bool_t bWirelessRxEnq(tsRxDataApp *psRx) {
 		return FALSE;
 	}
 	// 受信データ長判定
-	if (psRx->u8Len != sizeof(tsWirelessMsg)) {
+	if (psRx->u8Len != TX_REC_SIZE) {
 		return FALSE;
 	}
 	// 宛先アドレス
@@ -876,7 +877,7 @@ PUBLIC bool_t bWirelessTxTry() {
 	sTx.u32DstAddr = TOCONET_MAC_ADDR_BROADCAST;	// 送信先アドレス（ブロードキャスト）
 	sTx.u8Cmd = TOCONET_PACKET_CMD_APP_DATA;		// パケットタイプ
 	sTx.u8Seq = sWirelessInfo.u8TxSeq++;			// フレームシーケンス
-	sTx.u8Len = (uint8)sizeof(tsWirelessMsg);		// 送信データ長
+	sTx.u8Len = TX_REC_SIZE;						// 送信データ長
 	sTx.u8CbId = sTx.u8Seq;							// コールバックID（フレームシーケンス指定）
 	memcpy(sTx.auData, &psTxInfo->sMsg, sTx.u8Len);	// 送信データ
 	sTx.bAckReq = FALSE;							// ACK返信有無

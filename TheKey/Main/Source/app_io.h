@@ -8,6 +8,7 @@
  * DESCRIPTION:画面表示やキー入力等の基本的な入出力機能のヘッダファイル
  *
  * CHANGE HISTORY:
+ * 2018/01/20 21:47:00 認証時の通信内容をAES暗号化する事で保護
  *
  * LAST MODIFIED BY:
  *
@@ -57,6 +58,9 @@ extern "C" {
 // LCD Column Size
 #define LCD_BUFF_COL_SIZE            (8)
 
+// 送信レコードサイズ
+#define TX_REC_SIZE                  (90)
+
 /******************************************************************************/
 /***        Type Definitions                                                ***/
 /******************************************************************************/
@@ -95,10 +99,10 @@ typedef struct {
 typedef struct {
 	// 宛先アドレス
 	uint32 u32DstAddr;
-	// コマンド
-	uint8 u8Command;
 	// 同期乱数
 	uint32 u32SyncVal;
+	// コマンド
+	uint8 u8Command;
 	// 認証ストレッチング回数
 	uint8 u8AuthStCnt;
 	// 認証トークン
@@ -107,6 +111,8 @@ typedef struct {
 	uint8 u8UpdAuthStCnt;
 	// 更新トークン
 	uint8 u8UpdAuthToken[32];
+	// FILLER01
+	uint8 u8Filler01;
 	// タイムスタンプ（年）
 	uint16 u16Year;
 	// タイムスタンプ（月）
@@ -121,6 +127,8 @@ typedef struct {
 	uint8 u8Second;
 	// ステータスマップ
 	uint8 u8StatusMap;
+	// FILLER02
+	uint8 u8Filler02[5];
 	// CRCチェック
 	uint8 u8CRC;
 } tsWirelessMsg;
