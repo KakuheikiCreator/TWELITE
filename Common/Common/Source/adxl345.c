@@ -29,10 +29,9 @@
 #include "ToCoNet.h"
 #include "ToCoNet_mod_prototype.h"
 
-#include "ADXL345.h"
+#include "adxl345.h"
 #include "i2c_util.h"
 #include "timer_util.h"
-#include "framework.h"
 
 /****************************************************************************/
 /***        Macro Definitions                                             ***/
